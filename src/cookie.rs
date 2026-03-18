@@ -134,6 +134,12 @@ impl Cookie {
     }
 
     pub fn page_value_size(&mut self) -> u32 {
+        // Safari (macOS 12+) appends a binary plist AccessTime record after the
+        // cookie value within the same cookie record. When comment_offset is set
+        // and falls after value_offset, it marks the true end of the value field.
+        if self.comment_offset > self.value_offset {
+            return self.comment_offset - self.value_offset;
+        }
         return self.size - self.value_offset;
     }
 
@@ -164,9 +170,15 @@ impl Cookie {
     }
 
     pub fn value_str(&self) -> String {
-        String::from_utf8_lossy(&self.value)
-            .trim_end_matches("\0")
-            .to_string()
+        // Cookie values are null-terminated C strings. Stop at the first null
+        // byte to avoid including trailing metadata (e.g. Safari's binary plist
+        // AccessTime record that may follow the value in the raw buffer).
+        let end = self
+            .value
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(self.value.len());
+        String::from_utf8_lossy(&self.value[..end]).to_string()
     }
 
     pub fn name_str(&self) -> String {
